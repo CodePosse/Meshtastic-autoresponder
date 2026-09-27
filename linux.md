@@ -11,18 +11,73 @@ The goal is that:
 - If either service crashes, `systemd` restarts it.
 - You can restart both services together with one command.
 
-Autobot responds to these exact phrases, case-insensitively:
+## Autobot Rules
 
-| Incoming phrase | Direct-message response |
-|---|---|
-| `spanish inquisition` | `*Nobody expects the Spanish Inquisition!*` |
-| `dm test` | `I hear you`, then 10 seconds later `visit www.SoCalMesh.org` |
+Autobot sends **direct messages back to the sender**.
 
-> This guide assumes Debian 12 (bookworm) or Debian 13 (trixie). The current official Meshtastic documentation lists both as supported.
+### Spanish Inquisition
+
+Exact message, case-insensitive:
+
+```text
+spanish inquisition
+```
+
+Reply:
+
+```text
+*Nobody expects the Spanish Inquisition!*
+```
+
+### Test / Ping
+
+Any of these exact messages, case-insensitive:
+
+```text
+test
+ping
+dm test
+```
+
+Replies:
+
+```text
+I hear you
+```
+
+then 10 seconds later:
+
+```text
+visit www.SoCalMesh.org
+```
+
+### Public-channel telemetry warning
+
+If an incoming message contains either of these phrases, case-insensitively:
+
+```text
+End of Day Report:
+```
+
+or:
+
+```text
+in Upper Newport Bay
+```
+
+Autobot sends the sender this DM:
+
+```text
+no telemetry on Public please
+```
+
+The telemetry-warning rule is checked first.
+
+> This guide assumes Debian 12 (bookworm) or Debian 13 (trixie).
 
 ---
 
-## 1. Log in with SSH
+# 1. Log in with SSH
 
 From your computer:
 
@@ -125,19 +180,19 @@ Common examples are:
 /dev/ttyUSB0
 ```
 
-You can also use persistent device names:
+Also check persistent names:
 
 ```bash
 ls -l /dev/serial/by-id/ 2>/dev/null
 ```
 
-The `/dev/serial/by-id/` path is preferable to `/dev/ttyUSB0` when a program needs a stable serial-device name, because `ttyUSB0` may become `ttyUSB1` after reconnecting devices.
+The `/dev/serial/by-id/` path is preferable to `/dev/ttyUSB0` when a stable serial-device name is needed because `ttyUSB0` can become `ttyUSB1` after reconnects or reboots.
 
 ---
 
 ## 2.4 Show USB/serial device information with udev
 
-For example:
+Example:
 
 ```bash
 udevadm info --query=all --name=/dev/ttyUSB0
@@ -161,7 +216,7 @@ If you need to access a regular serial Meshtastic device directly from your user
 sudo usermod -aG dialout "$USER"
 ```
 
-Then log out of SSH and reconnect for the new group membership to apply.
+Then log out of SSH and reconnect.
 
 Verify:
 
@@ -175,8 +230,6 @@ You should see:
 dialout
 ```
 
-> `meshtasticd` packages install their own service account and udev support. The `dialout` step is primarily useful for direct CLI/serial testing.
-
 ---
 
 # 3. Important USB Distinction
@@ -185,17 +238,15 @@ There are two different USB scenarios.
 
 ## A. USB radio supported directly by meshtasticd
 
-Examples include supported USB LoRa hardware such as MeshStick-style radios.
+A supported USB LoRa radio is controlled directly by `meshtasticd`.
 
-`meshtasticd` itself becomes the Meshtastic node and controls the LoRa radio.
+`meshtasticd` becomes the Meshtastic node and owns the radio.
 
-This guide is designed for that configuration.
+This guide is intended for that configuration.
 
-Current Debian builds of `meshtasticd` support USB radios.
+## B. A normal Meshtastic ESP32/nRF52/etc. node attached by USB
 
-## B. Meshtastic ESP32/nRF52 node attached by USB
-
-A normal Meshtastic device may appear as:
+A regular Meshtastic device may appear as:
 
 ```text
 /dev/ttyACM0
@@ -207,11 +258,9 @@ or:
 /dev/ttyUSB0
 ```
 
-That can be controlled directly by the Meshtastic Python CLI/API.
+That device can be controlled by the Meshtastic Python CLI/API over serial.
 
-That is not necessarily the same thing as using the USB device as the native LoRa radio for `meshtasticd`.
-
-If your device is a normal flashed Meshtastic node rather than a `meshtasticd`-supported USB radio, use the Python serial interface instead of assuming `meshtasticd` should consume it.
+That is not necessarily the same as a native USB radio supported directly by `meshtasticd`.
 
 ---
 
@@ -221,6 +270,7 @@ Run:
 
 ```bash
 sudo apt update
+
 sudo apt install -y \
   curl \
   ca-certificates \
@@ -235,22 +285,14 @@ sudo apt install -y \
 
 # 5. Install meshtasticd
 
-The official Meshtastic Debian packages are provided through the OpenSUSE Build Service.
-
-This guide uses the **beta** repository rather than alpha/daily builds.
-
-First determine your Debian version:
+Determine the Debian version:
 
 ```bash
 . /etc/os-release
 echo "$VERSION_ID"
 ```
 
----
-
-## 5.1 Debian 13 / trixie
-
-Use these commands on Debian 13:
+## Debian 13 / trixie
 
 ```bash
 echo 'deb http://download.opensuse.org/repositories/network:/Meshtastic:/beta/Debian_13/ /' \
@@ -266,11 +308,7 @@ sudo apt update
 sudo apt install -y meshtasticd
 ```
 
----
-
-## 5.2 Debian 12 / bookworm
-
-Use these commands on Debian 12:
+## Debian 12 / bookworm
 
 ```bash
 echo 'deb http://download.opensuse.org/repositories/network:/Meshtastic:/beta/Debian_12/ /' \
@@ -290,19 +328,19 @@ sudo apt install -y meshtasticd
 
 # 6. Inspect the meshtasticd Installation
 
-Check the installed version:
-
-```bash
-meshtasticd --version
-```
-
-If that option is not supported by the installed build, use:
+Check package/version information:
 
 ```bash
 apt-cache policy meshtasticd
 ```
 
-Check the package-created configuration directories:
+Try:
+
+```bash
+meshtasticd --version
+```
+
+Inspect configuration directories:
 
 ```bash
 ls -la /etc/meshtasticd
@@ -310,7 +348,7 @@ ls -la /etc/meshtasticd/config.d 2>/dev/null
 ls -la /etc/meshtasticd/available.d 2>/dev/null
 ```
 
-Typical locations are:
+Common locations include:
 
 ```text
 /etc/meshtasticd/config.yaml
@@ -323,50 +361,32 @@ Typical locations are:
 
 # 7. Let meshtasticd Detect the USB Radio
 
-Start `meshtasticd`:
+Start the daemon:
 
 ```bash
 sudo systemctl start meshtasticd
 ```
 
-Then inspect its log:
+Inspect logs:
 
 ```bash
 sudo journalctl -u meshtasticd -n 100 --no-pager
 ```
 
-For a supported USB radio, recent `meshtasticd` builds may automatically detect the device.
-
-For example, a supported CH341-based USB LoRa radio may produce log lines similar to:
-
-```text
-autoconf: Looking for CH341 device...
-autoconf: Found CH341 device ...
-autoconf: Setting hardwareModel ...
-autoconf: Using lora-usb-....yaml as config file
-```
-
-The exact hardware and configuration filename will vary.
-
-Watch live while reconnecting the radio:
+Watch live while reconnecting the USB radio:
 
 ```bash
 sudo journalctl -u meshtasticd -f
 ```
 
+For supported USB radios, `meshtasticd` may automatically detect the hardware and select an appropriate configuration.
+
 ---
 
 # 8. Enable meshtasticd at Boot
 
-Run:
-
 ```bash
 sudo systemctl enable meshtasticd
-```
-
-Then restart it:
-
-```bash
 sudo systemctl restart meshtasticd
 ```
 
@@ -376,7 +396,7 @@ Check:
 systemctl status meshtasticd --no-pager
 ```
 
-You want:
+Expected:
 
 ```text
 Active: active (running)
@@ -384,7 +404,7 @@ Active: active (running)
 
 ---
 
-# 9. Confirm meshtasticd TCP API Port
+# 9. Confirm the meshtasticd TCP API
 
 The Meshtastic TCP interface normally listens on port:
 
@@ -392,13 +412,11 @@ The Meshtastic TCP interface normally listens on port:
 4403
 ```
 
-Check it:
+Check:
 
 ```bash
 sudo ss -ltnp | grep ':4403'
 ```
-
-You should see a listener associated with `meshtasticd`.
 
 Autobot connects locally to:
 
@@ -406,13 +424,11 @@ Autobot connects locally to:
 127.0.0.1:4403
 ```
 
-No external firewall opening is required for Autobot because it runs on the same Linux host.
+No external firewall opening is required for Autobot because it runs on the same host.
 
 ---
 
-# 10. Install the Meshtastic Python Environment for Autobot
-
-Create a dedicated service account:
+# 10. Create the Autobot Service Account
 
 ```bash
 sudo useradd \
@@ -430,13 +446,15 @@ sudo mkdir -p /opt/autobot
 sudo chown autobot:autobot /opt/autobot
 ```
 
-Create the Python virtual environment:
+---
+
+# 11. Create the Python Environment
 
 ```bash
 sudo -u autobot python3 -m venv /opt/autobot/venv
 ```
 
-Install Meshtastic:
+Install the Meshtastic Python package:
 
 ```bash
 sudo -u autobot \
@@ -449,12 +467,12 @@ Verify:
 ```bash
 sudo -u autobot \
   /opt/autobot/venv/bin/python -c \
-  "import meshtastic; print('Meshtastic Python library OK')"
+  "import meshtastic; from pubsub import pub; print('Meshtastic Python library OK')"
 ```
 
 ---
 
-# 11. Create the Autobot Script
+# 12. Create the Autobot Script
 
 Create:
 
@@ -462,7 +480,7 @@ Create:
 sudo nano /opt/autobot/autobot.py
 ```
 
-Paste the entire script below.
+Paste this entire file:
 
 ```python
 #!/usr/bin/env python3
@@ -477,15 +495,26 @@ from meshtastic.tcp_interface import TCPInterface
 
 MESHTASTIC_HOST = "127.0.0.1"
 
-TRIGGERS = {
-    "spanish inquisition": [
-        "*Nobody expects the Spanish Inquisition!*",
-    ],
-    "dm test": [
-        "I hear you",
-        "visit www.SoCalMesh.org",
-    ],
+SPANISH_TRIGGER = "spanish inquisition"
+SPANISH_REPLY = "*Nobody expects the Spanish Inquisition!*"
+
+TEST_TRIGGERS = {
+    "test",
+    "ping",
+    "dm test",
 }
+
+TEST_REPLIES = [
+    "I hear you",
+    "visit www.SoCalMesh.org",
+]
+
+WARNING_PHRASES = [
+    "end of day report:",
+    "in upper newport bay",
+]
+
+WARNING_REPLY = "no telemetry on Public please"
 
 MULTI_REPLY_DELAY = 10
 RECONNECT_DELAY = 5
@@ -531,6 +560,33 @@ def get_text(packet):
     return None
 
 
+def is_local_packet(packet, interface):
+    try:
+        local_num = interface.myInfo.my_node_num
+        source_num = packet.get("from")
+
+        return source_num == local_num
+
+    except Exception:
+        return False
+
+
+def choose_replies(text):
+    normalized = text.strip().casefold()
+
+    for phrase in WARNING_PHRASES:
+        if phrase in normalized:
+            return [WARNING_REPLY], "telemetry warning"
+
+    if normalized == SPANISH_TRIGGER:
+        return [SPANISH_REPLY], "spanish inquisition"
+
+    if normalized in TEST_TRIGGERS:
+        return list(TEST_REPLIES), "test"
+
+    return None, None
+
+
 def on_receive(packet, interface):
     text = get_text(packet)
 
@@ -538,7 +594,6 @@ def on_receive(packet, interface):
         return
 
     text = text.strip()
-    normalized = text.casefold()
 
     source_id = get_source_id(packet)
     destination_id = packet.get("toId")
@@ -547,34 +602,25 @@ def on_receive(packet, interface):
         f"RX {source_id} -> {destination_id}: {text!r}"
     )
 
-    replies = TRIGGERS.get(normalized)
+    if is_local_packet(packet, interface):
+        log(
+            "Ignoring text originating from the local node."
+        )
+        return
+
+    replies, rule_name = choose_replies(text)
 
     if not replies:
         return
 
     if not source_id:
         log(
-            "Trigger matched, but source node ID "
-            "was unavailable."
+            "Trigger matched, but source node ID was unavailable."
         )
         return
 
-    try:
-        local_num = interface.myInfo.my_node_num
-        source_num = packet.get("from")
-
-        if source_num == local_num:
-            log(
-                "Ignoring text originating "
-                "from the local node."
-            )
-            return
-
-    except Exception:
-        pass
-
     log(
-        f"Trigger matched: {normalized!r} "
+        f"Rule matched: {rule_name!r} "
         f"from {source_id}"
     )
 
@@ -582,7 +628,7 @@ def on_receive(packet, interface):
         (
             interface,
             source_id,
-            list(replies),
+            replies,
         )
     )
 
@@ -650,7 +696,6 @@ def reply_worker():
                         f"TX error to {destination}: "
                         f"{type(exc).__name__}: {exc}"
                     )
-
                     break
 
                 if index < len(replies) - 1:
@@ -701,10 +746,21 @@ def main():
     )
 
     log(
-        "Triggers: "
+        f"Spanish trigger: {SPANISH_TRIGGER!r}"
+    )
+
+    log(
+        "Exact test triggers: "
+        + ", ".join(
+            sorted(TEST_TRIGGERS)
+        )
+    )
+
+    log(
+        "Warning phrases: "
         + ", ".join(
             repr(x)
-            for x in TRIGGERS
+            for x in WARNING_PHRASES
         )
     )
 
@@ -782,7 +838,7 @@ if __name__ == "__main__":
     main()
 ```
 
-Save:
+Save with:
 
 ```text
 Ctrl+O
@@ -799,9 +855,9 @@ sudo chmod 750 /opt/autobot/autobot.py
 
 ---
 
-# 12. Syntax Check Before Running It
+# 13. Syntax Check Before Running
 
-Always perform this check before installing/restarting the service:
+Always syntax-check the file before restarting the service:
 
 ```bash
 sudo -u autobot \
@@ -810,19 +866,19 @@ sudo -u autobot \
   /opt/autobot/autobot.py
 ```
 
-If it produces no output, the Python syntax is valid.
+No output means the Python syntax is valid.
 
 ---
 
-# 13. Test the Script Manually
+# 14. Test Autobot Manually
 
-First make sure `meshtasticd` is running:
+Verify `meshtasticd`:
 
 ```bash
 systemctl status meshtasticd --no-pager
 ```
 
-Then run Autobot:
+Then run:
 
 ```bash
 sudo -u autobot \
@@ -830,7 +886,7 @@ sudo -u autobot \
   /opt/autobot/autobot.py
 ```
 
-Expected startup output:
+Expected startup:
 
 ```text
 Meshtasticd Autobot starting.
@@ -839,49 +895,89 @@ Connected to meshtasticd ...
 Meshtasticd Autobot online.
 ```
 
-From another Meshtastic node, send:
+Test each rule from another Meshtastic node.
+
+### Test 1
+
+Send:
 
 ```text
 spanish inquisition
 ```
 
-Expected direct reply:
+Expected DM:
 
 ```text
 *Nobody expects the Spanish Inquisition!*
 ```
 
-Then send:
+### Test 2
+
+Send:
 
 ```text
-dm test
+ping
 ```
 
-Expected replies:
+Expected:
 
 ```text
 I hear you
 ```
 
-followed about 10 seconds later by:
+then about 10 seconds later:
 
 ```text
 visit www.SoCalMesh.org
 ```
 
-Press:
+The same behavior applies to:
 
 ```text
-Ctrl+C
+test
 ```
 
-to stop the manual test.
+and:
+
+```text
+dm test
+```
+
+### Test 3
+
+Send a message containing:
+
+```text
+End of Day Report:
+```
+
+Expected DM:
+
+```text
+no telemetry on Public please
+```
+
+### Test 4
+
+Send a message containing:
+
+```text
+in Upper Newport Bay
+```
+
+Expected DM:
+
+```text
+no telemetry on Public please
+```
+
+Press `Ctrl+C` after manual testing.
 
 ---
 
-# 14. Run Autobot Permanently with systemd
+# 15. Create the systemd Service
 
-Create the service:
+Create:
 
 ```bash
 sudo nano /etc/systemd/system/autobot.service
@@ -915,21 +1011,13 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-Save:
-
-```text
-Ctrl+O
-Enter
-Ctrl+X
-```
-
-Reload systemd:
+Save, then reload:
 
 ```bash
 sudo systemctl daemon-reload
 ```
 
-Enable Autobot at boot:
+Enable at boot:
 
 ```bash
 sudo systemctl enable autobot
@@ -947,7 +1035,7 @@ Check:
 systemctl status autobot --no-pager
 ```
 
-You want:
+Expected:
 
 ```text
 Active: active (running)
@@ -955,97 +1043,85 @@ Active: active (running)
 
 ---
 
-# 15. Avoid SSH Logout / Timeout Problems
+# 16. Avoid SSH Logout / Timeout Problems
 
-## The important rule
-
-Do **not** rely on this:
+Do not permanently run Autobot as:
 
 ```bash
 python3 autobot.py
 ```
 
-from a normal SSH window for permanent operation.
+inside a normal SSH shell.
 
-A foreground process attached to an SSH session can terminate when the SSH connection closes.
+Instead use the `systemd` service.
 
-Instead, always run Autobot through:
+Once enabled, Autobot continues running when:
 
-```text
-systemd
-```
+- SSH disconnects
+- your laptop sleeps
+- your terminal closes
+- you log out
+- the server reboots
 
-Once the service is enabled and running, you may:
-
-- close the SSH window,
-- disconnect your laptop,
-- log out,
-- reconnect later,
-
-and Autobot will continue running.
-
-Verify boot persistence:
+Check boot persistence:
 
 ```bash
 systemctl is-enabled meshtasticd
 systemctl is-enabled autobot
 ```
 
-Both should report:
+Expected:
 
 ```text
 enabled
+enabled
 ```
 
-Verify current runtime state:
+Check runtime state:
 
 ```bash
 systemctl is-active meshtasticd
 systemctl is-active autobot
 ```
 
-Both should report:
+Expected:
 
 ```text
+active
 active
 ```
 
 ---
 
-# 16. No Meshpoint/JWT Login Timeout
+# 17. No Meshpoint/JWT Timeout
 
-This Linux version does not use the Meshpoint REST login or WebSocket JWT token.
+This version does not use the Meshpoint REST API or a Meshpoint JWT.
 
-Autobot connects directly to:
+Autobot talks directly to:
 
 ```text
-meshtasticd -> TCP 127.0.0.1:4403
+meshtasticd
+    |
+    +-- TCP 127.0.0.1:4403
 ```
 
-Therefore there is no hourly Meshpoint authentication token for Autobot to renew.
+There is therefore no hourly Meshpoint login token to expire.
 
-The remaining failure modes are normal service/network/process failures, which are handled by:
-
-```ini
-Restart=always
-RestartSec=5
-```
-
-and the reconnect loop in the Python script.
+The Python reconnect loop and `systemd` restart policy handle ordinary process and connection failures.
 
 ---
 
-# 17. Optional SSH Keepalive
+# 18. Optional SSH Keepalive
 
-SSH keepalive is **not required for Autobot** once systemd is running it.
+This is only for keeping your interactive SSH terminal connected.
 
-If you want your interactive SSH session itself to remain connected longer, edit your local SSH config:
+On your client computer:
 
 ```bash
 nano ~/.ssh/config
 ```
 
-Example:
+Add:
 
 ```text
 Host *
@@ -1053,13 +1129,11 @@ Host *
     ServerAliveCountMax 5
 ```
 
-This only affects your SSH client session.
-
-It does not control `meshtasticd` or Autobot.
+This has no effect on Autobot once Autobot is running through `systemd`.
 
 ---
 
-# 18. Restart meshtasticd and Autobot Together
+# 19. Restart meshtasticd and Autobot Together
 
 Use:
 
@@ -1077,15 +1151,11 @@ sleep 5 && \
 sudo systemctl restart autobot
 ```
 
-The small delay gives `meshtasticd` time to initialize its radio and TCP API before Autobot reconnects.
-
-Autobot also has its own reconnect loop, so a temporarily unavailable port should not permanently stop it.
+The delay gives `meshtasticd` time to initialize the radio and TCP API before Autobot connects.
 
 ---
 
-# 19. Verify Both Services After Restart
-
-Run:
+# 20. Verify Both Services
 
 ```bash
 systemctl status meshtasticd --no-pager
@@ -1105,7 +1175,7 @@ active
 active
 ```
 
-Check TCP port 4403:
+Confirm port `4403`:
 
 ```bash
 sudo ss -ltnp | grep ':4403'
@@ -1113,7 +1183,7 @@ sudo ss -ltnp | grep ':4403'
 
 ---
 
-# 20. Logging
+# 21. Logging
 
 ## Watch Autobot
 
@@ -1138,7 +1208,7 @@ sudo journalctl \
 
 ---
 
-# 21. Show Recent Logs
+# 22. Recent Logs
 
 Autobot:
 
@@ -1158,7 +1228,7 @@ sudo journalctl \
   --no-pager
 ```
 
-Both for the last five minutes:
+Both from the last five minutes:
 
 ```bash
 sudo journalctl \
@@ -1170,7 +1240,7 @@ sudo journalctl \
 
 ---
 
-# 22. Useful Filtered Log View
+# 23. Filtered Autobot / Meshtastic Logs
 
 ```bash
 sudo journalctl \
@@ -1178,27 +1248,25 @@ sudo journalctl \
   -u autobot \
   -f \
   | grep --line-buffered -Ei \
-  'RX |TX |trigger|text|ack|send|error|fail|usb|radio|reconnect'
+  'RX |TX |rule matched|trigger|text|ack|send|error|fail|usb|radio|reconnect'
 ```
 
 ---
 
-# 23. Check Service Restart Counts
+# 24. Check Restart Counts
 
 ```bash
 systemctl show meshtasticd -p NRestarts
 systemctl show autobot -p NRestarts
 ```
 
-A rapidly increasing restart count usually indicates a crash loop.
+Rapidly increasing restart counts indicate a crash loop.
 
 ---
 
-# 24. Test meshtasticd with the Meshtastic CLI
+# 25. Test meshtasticd with the Meshtastic CLI
 
-Because `"meshtastic[cli]"` was installed into Autobot's virtual environment, you can use its CLI without installing another system-wide copy.
-
-Node information:
+Because `"meshtastic[cli]"` was installed in the Autobot virtual environment, use:
 
 ```bash
 sudo -u autobot \
@@ -1227,9 +1295,7 @@ sudo -u autobot \
 
 ---
 
-# 25. Configure Region
-
-Meshtastic radios must have the correct legal radio region configured.
+# 26. Configure the Region
 
 For the United States:
 
@@ -1240,7 +1306,7 @@ sudo -u autobot \
   --set lora.region US
 ```
 
-Then confirm:
+Confirm:
 
 ```bash
 sudo -u autobot \
@@ -1249,13 +1315,13 @@ sudo -u autobot \
   --info
 ```
 
-Use the appropriate region instead of `US` if the node is operated elsewhere.
+Use the correct legal region if operating outside the United States.
 
 ---
 
-# 26. Verify Long_Fast
+# 27. Verify Long_Fast
 
-Inspect current configuration:
+Inspect:
 
 ```bash
 sudo -u autobot \
@@ -1264,23 +1330,23 @@ sudo -u autobot \
   --info
 ```
 
-Do not overwrite an existing channel configuration unless you know what channel settings the mesh uses.
+Do not overwrite an existing channel configuration unless you know exactly what channel settings the mesh uses.
 
-The Autobot script simply listens to text messages that `meshtasticd` receives and sends replies using channel index `0`.
+Autobot listens to text packets delivered by `meshtasticd` and sends its direct replies on channel index `0`.
 
 ---
 
-# 27. Reboot Test
+# 28. Reboot Test
 
-Once everything works, perform a real persistence test:
+Once everything works:
 
 ```bash
 sudo reboot
 ```
 
-Reconnect over SSH after the machine comes back.
+Reconnect over SSH.
 
-Run:
+Check:
 
 ```bash
 systemctl is-active meshtasticd
@@ -1294,7 +1360,7 @@ active
 active
 ```
 
-Then:
+Check startup logs:
 
 ```bash
 sudo journalctl \
@@ -1304,11 +1370,9 @@ sudo journalctl \
   --no-pager
 ```
 
-You should see `meshtasticd` start followed by Autobot connecting to TCP port `4403`.
-
 ---
 
-# 28. Quick Health Check
+# 29. Quick Health Check
 
 Use this block whenever something seems wrong:
 
@@ -1346,18 +1410,16 @@ sudo journalctl \
 
 ---
 
-# 29. Common Problems
+# 30. Common Problems
 
 ## Autobot says connection refused
-
-Check:
 
 ```bash
 systemctl status meshtasticd --no-pager
 sudo ss -ltnp | grep ':4403'
 ```
 
-Restart both:
+Then:
 
 ```bash
 sudo systemctl restart meshtasticd
@@ -1404,7 +1466,7 @@ sudo dmesg | tail -100
 sudo journalctl -u meshtasticd -n 150 --no-pager
 ```
 
-Reconnect the USB device while running:
+Reconnect the USB device while watching:
 
 ```bash
 sudo journalctl -u meshtasticd -f
@@ -1415,8 +1477,6 @@ Also inspect:
 ```bash
 ls -la /etc/meshtasticd/available.d/
 ```
-
-for a configuration matching the hardware.
 
 ---
 
@@ -1442,7 +1502,7 @@ sudo usermod -aG dialout "$USER"
 
 Then log out and reconnect.
 
-For `meshtasticd` itself, inspect the installed service account and udev permissions rather than blindly running the daemon as root:
+For `meshtasticd`, inspect its service account and udev permissions rather than changing the daemon to run as root:
 
 ```bash
 systemctl cat meshtasticd
@@ -1451,7 +1511,41 @@ ls -l /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
 
 ---
 
-# 30. File Locations
+# 31. Expected Autobot Logs
+
+## Spanish Inquisition
+
+```text
+RX !1234abcd -> !xxxxxxxx: 'spanish inquisition'
+Rule matched: 'spanish inquisition' from !1234abcd
+Sending DM to !1234abcd: '*Nobody expects the Spanish Inquisition!*'
+TX DM -> !1234abcd: '*Nobody expects the Spanish Inquisition!*'
+```
+
+## Ping / Test / DM Test
+
+```text
+RX !1234abcd -> !xxxxxxxx: 'ping'
+Rule matched: 'test' from !1234abcd
+Sending DM to !1234abcd: 'I hear you'
+TX DM -> !1234abcd: 'I hear you'
+Waiting 10 seconds before next reply...
+Sending DM to !1234abcd: 'visit www.SoCalMesh.org'
+TX DM -> !1234abcd: 'visit www.SoCalMesh.org'
+```
+
+## Telemetry Warning
+
+```text
+RX !1234abcd -> !xxxxxxxx: 'End of Day Report: ...'
+Rule matched: 'telemetry warning' from !1234abcd
+Sending DM to !1234abcd: 'no telemetry on Public please'
+TX DM -> !1234abcd: 'no telemetry on Public please'
+```
+
+---
+
+# 32. File Locations
 
 Autobot:
 
@@ -1472,7 +1566,7 @@ meshtasticd:
 
 ---
 
-# 31. Everyday Commands
+# 33. Everyday Commands
 
 Restart both:
 
@@ -1494,13 +1588,13 @@ Logs:
 sudo journalctl -u meshtasticd -u autobot -f
 ```
 
-Stop Autobot only:
+Stop Autobot:
 
 ```bash
 sudo systemctl stop autobot
 ```
 
-Start Autobot only:
+Start Autobot:
 
 ```bash
 sudo systemctl start autobot
@@ -1512,7 +1606,7 @@ Disable Autobot:
 sudo systemctl disable --now autobot
 ```
 
-Re-enable it:
+Re-enable:
 
 ```bash
 sudo systemctl enable --now autobot
@@ -1520,9 +1614,9 @@ sudo systemctl enable --now autobot
 
 ---
 
-# 32. Why This Survives Logout
+# 34. Why This Survives Logout
 
-The final setup is:
+The final architecture is:
 
 ```text
 USB LoRa radio
@@ -1538,7 +1632,7 @@ autobot.service
 Meshtastic DM replies
 ```
 
-Neither program is tied to your SSH shell.
+Neither service is attached to your SSH shell.
 
 `systemd` owns the processes.
 
@@ -1548,7 +1642,7 @@ Therefore:
 SSH logout != service shutdown
 ```
 
-and a reboot automatically starts the services again when they are enabled.
+A reboot automatically starts both services again when they are enabled.
 
 ---
 
@@ -1567,5 +1661,3 @@ Official Meshtastic documentation:
 
 - Meshtastic documentation:
   https://meshtastic.org/docs/
-
-The Debian package documentation currently lists Debian 12 and Debian 13 as supported and lists USB radio support for Debian.

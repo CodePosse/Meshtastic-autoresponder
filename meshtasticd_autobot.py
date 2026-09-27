@@ -7,14 +7,32 @@ Connects to a local meshtasticd instance over the Meshtastic TCP interface
 (default TCP port 4403), listens for incoming text messages, and sends a
 direct-message response back to the sender.
 
-Triggers:
-    spanish inquisition
-        -> *Nobody expects the Spanish Inquisition!*
+Rules:
 
-    dm test
-        -> I hear you
-        -> wait 10 seconds
-        -> visit www.SoCalMesh.org
+1. Exact message (case-insensitive):
+       spanish inquisition
+
+   Reply:
+       *Nobody expects the Spanish Inquisition!*
+
+2. Exact messages (case-insensitive):
+       test
+       ping
+       dm test
+
+   Reply:
+       I hear you
+       [wait 10 seconds]
+       visit www.SoCalMesh.org
+
+3. Messages containing either phrase (case-insensitive):
+       End of Day Report:
+       in Upper Newport Bay
+
+   Reply:
+       no telemetry on Public please
+
+The telemetry-warning rule is checked first.
 """
 
 import queue
@@ -27,15 +45,26 @@ from meshtastic.tcp_interface import TCPInterface
 
 MESHTASTIC_HOST = "127.0.0.1"
 
-TRIGGERS = {
-    "spanish inquisition": [
-        "*Nobody expects the Spanish Inquisition!*",
-    ],
-    "dm test": [
-        "I hear you",
-        "visit www.SoCalMesh.org",
-    ],
+SPANISH_TRIGGER = "spanish inquisition"
+SPANISH_REPLY = "*Nobody expects the Spanish Inquisition!*"
+
+TEST_TRIGGERS = {
+    "test",
+    "ping",
+    "dm test",
 }
+
+TEST_REPLIES = [
+    "I hear you",
+    "visit www.SoCalMesh.org",
+]
+
+WARNING_PHRASES = [
+    "end of day report:",
+    "in upper newport bay",
+]
+
+WARNING_REPLY = "no telemetry on Public please"
 
 MULTI_REPLY_DELAY = 10
 RECONNECT_DELAY = 5
@@ -87,11 +116,50 @@ def get_text(packet):
     return None
 
 
+def is_local_packet(packet, interface):
+    """
+    Prevent Autobot from replying to text transmitted by its own local node.
+    """
+    try:
+        local_num = interface.myInfo.my_node_num
+        source_num = packet.get("from")
+
+        return source_num == local_num
+
+    except Exception:
+        return False
+
+
+def choose_replies(text):
+    """
+    Return the reply list for an incoming message.
+
+    Priority:
+      1. Telemetry/public-channel warning phrases
+      2. Spanish Inquisition trigger
+      3. Exact test/ping/dm test triggers
+    """
+    normalized = text.strip().casefold()
+
+    for phrase in WARNING_PHRASES:
+        if phrase in normalized:
+            return [WARNING_REPLY], "telemetry warning"
+
+    if normalized == SPANISH_TRIGGER:
+        return [SPANISH_REPLY], "spanish inquisition"
+
+    if normalized in TEST_TRIGGERS:
+        return list(TEST_REPLIES), "test"
+
+    return None, None
+
+
 def on_receive(packet, interface):
     """
     Called by the Meshtastic Python library whenever a text packet arrives.
-    Keep this callback short: queue replies for the worker thread rather than
-    sleeping inside the receive callback.
+
+    Keep this callback short: replies are queued for the sender worker rather
+    than sleeping inside the receive callback.
     """
     text = get_text(packet)
 
@@ -99,7 +167,6 @@ def on_receive(packet, interface):
         return
 
     text = text.strip()
-    normalized = text.casefold()
 
     source_id = get_source_id(packet)
     destination_id = packet.get("toId")
@@ -108,7 +175,11 @@ def on_receive(packet, interface):
         f"RX {source_id} -> {destination_id}: {text!r}"
     )
 
-    replies = TRIGGERS.get(normalized)
+    if is_local_packet(packet, interface):
+        log("Ignoring text originating from the local node.")
+        return
+
+    replies, rule_name = choose_replies(text)
 
     if not replies:
         return
@@ -117,21 +188,8 @@ def on_receive(packet, interface):
         log("Trigger matched, but source node ID was unavailable.")
         return
 
-    # Prevent the local daemon/node from responding to its own transmitted
-    # text if such a packet is ever reflected back to the client.
-    try:
-        local_num = interface.myInfo.my_node_num
-        source_num = packet.get("from")
-
-        if source_num == local_num:
-            log("Ignoring text originating from the local node.")
-            return
-
-    except Exception:
-        pass
-
     log(
-        f"Trigger matched: {normalized!r} "
+        f"Rule matched: {rule_name!r} "
         f"from {source_id}"
     )
 
@@ -141,7 +199,7 @@ def on_receive(packet, interface):
         (
             interface,
             source_id,
-            list(replies),
+            replies,
         )
     )
 
@@ -183,8 +241,8 @@ def reply_worker():
     """
     Dedicated sender thread.
 
-    This prevents the 10-second multi-message delay from blocking the
-    Meshtastic receive callback.
+    This prevents the 10-second delay between the two test replies from
+    blocking the Meshtastic receive callback.
     """
     while True:
         interface, destination, replies = reply_queue.get()
@@ -251,8 +309,17 @@ def main():
     log("Meshtasticd Autobot starting.")
 
     log(
-        "Triggers: "
-        + ", ".join(repr(x) for x in TRIGGERS)
+        f"Spanish trigger: {SPANISH_TRIGGER!r}"
+    )
+
+    log(
+        "Exact test triggers: "
+        + ", ".join(sorted(TEST_TRIGGERS))
+    )
+
+    log(
+        "Warning phrases: "
+        + ", ".join(repr(x) for x in WARNING_PHRASES)
     )
 
     pub.subscribe(
